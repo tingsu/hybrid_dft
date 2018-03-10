@@ -1,0 +1,4 @@
+#!/bin/sh
+exec yices -smt
+#exec cvc3 -lang smtlib
+#exec z3/run

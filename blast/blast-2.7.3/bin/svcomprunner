@@ -1,0 +1,57 @@
+#!/usr/bin/perl
+
+sub usage {
+	my $msg = shift;
+	print STDERR $msg."\n";
+
+	print STDERR << 'END_TXT';
+Usage: svcomp-runner ocamltune pblast.opt -alias empty -enable-recursion -noprofile -cref -sv-comp -lattice -include-lattice symb -nosserr -propertyfile property_file -svcomp-witness witness-svcomp.graphml
+END_TXT
+	die;
+}
+sub index_of
+{
+	my @array = @{$_[0]};
+	my $value = $_[1];
+	my( $index )= grep { $array[$_] eq $value } 0..$#array;
+	return $index;
+}
+
+my $witness_option = "-svcomp-witness";
+my $index = index_of(\@ARGV, $witness_option);
+if(defined $index and $index+1<$#ARGV) {
+	my $error_path_option = "-errorpathfile";
+	my $index2 = index_of(\@ARGV, $error_path_option);
+        if(defined $index2) {
+		die "You should not use option $witness_option together with $error_path_option option";
+	}
+
+	my $witness_file = $ARGV[$index+1];
+	my $blast_error_trace = $witness_file.".blast";
+	$ARGV[$index] = $error_path_option;
+	$ARGV[$index+1] = $blast_error_trace;
+
+	my $full_trace_option = "-full-trace";
+	my $index3 = index_of(\@ARGV, $full_trace_option);
+	my $is_full;
+        if(defined $index3) {
+		splice @ARGV, $index3, 1;
+		$is_full = "true";
+	}
+
+	system(@ARGV);
+	$RET=$?;
+
+	if( -e $blast_error_trace ) 
+	{
+		@args = ("convert_to_common.pl", "blast", $blast_error_trace, $witness_file, $is_full);
+		system(@args) == 0 or die "System @args failed: $?";
+		unlink $blast_error_trace or warn "Could not unlink $blast_error_trace: $!";
+	}
+	exit $RET;
+} else {
+	system(@ARGV);
+	$RET=$?;
+	exit $RET;
+}
+

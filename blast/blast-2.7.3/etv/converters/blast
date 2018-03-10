@@ -1,0 +1,726 @@
+################################################################################
+# Copyright (C) 2013
+# Institute for System Programming, Russian Academy of Sciences (ISPRAS).
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+################################################################################
+
+use Env qw(LDV_DEBUG LDV_BLAST_ET_CONV_DEBUG);
+
+# Add some nonstandard local Perl packages.
+use ETV::Entity;
+use ETV::Annotation;
+
+
+################################################################################
+# Subroutine prototypes.
+################################################################################
+
+# Convert a given tree node from internal representation to the common format.
+# args: tree node.
+# retn: reference to array of common error trace lines.
+sub convert_tree_node_to_common($);
+
+# Parse a given error trace and convert it into internal representation (tree).
+# args: reference to array of error trace lines.
+# retn: tree root node.
+sub parse_error_trace($);
+
+# Read something placed into brackets.
+# args: some string.
+# retn: a content of brackets or undef if it can't be read.
+sub read_brackets($);
+
+# Read an equality sign and an integer number (line number in source code).
+# args: some string.
+# retn: a corresponding integer line number or undef if it can't be read.
+sub read_equal_int($);
+
+# Read an equality sign and a path to a source code file.
+# args: some string.
+# retn: a corresponding source code file path or undef if it can't be read.
+sub read_equal_src($);
+
+# Read a next line from a specified error trace and process it a bit.
+# args: a reference to array of strings representing a given error trace.
+# retn: a processed line or undef when there is no more lines.
+sub read_line($);
+
+# Read a LDV comment.
+# args: some string.
+# retn: a processed ldv comment or undef if it can't be read.
+sub read_ldv_comment($);
+
+# Read locals (function parameter names).
+# args: some string.
+# retn: processed names or undef if it can't be read.
+sub read_locals($);
+
+# Read a location. The location includes an useless location, a path to a source
+# code file and a line number.
+# args: some string.
+# retn: a processed path to a file and a line number or undef if it can't be read.
+sub read_location($);
+
+
+################################################################################
+# Global variables.
+################################################################################
+
+# Specify that this converter is for BLAST static verifier.
+my $engine = 'blast';
+
+# BLAST error trace tree nodes, annotations and their processing functions:
+#   tree node
+#     Block
+#     FunctionCall
+#     Pred
+#     Skip
+#   annotation
+#     LDV
+#     Location
+#     Locals
+my %et_element = (
+  'tree node' => {
+    my $et_block = 'Block', \&read_brackets,
+    my $et_func_call = 'FunctionCall', \&read_brackets,
+    my $et_cond = 'Pred', \&read_brackets,
+    my $et_root = 'Root', '',
+    my $et_skip = 'Skip', ''
+  },
+  'annotation' => {
+    my $et_ldv_comment = 'LDV', \&read_ldv_comment,
+    my $et_params = 'Locals', \&read_locals,
+    my $et_location = 'Location', \&read_location
+  });
+
+# Reqular expression to extract a BLAST error trace element kind.
+my $et_element_kind = '^([^=\(:]+)';
+
+# A previously processed path to a source code file and a line number. They are
+# needed in cases when a current entity location can't be processed
+# successfully.
+my $src_prev = '';
+my $line_prev = 0;
+
+# Specifies a current context. In fact it's required just to determine where an
+# entry point starts, because of there is no explicit entry point in BLAST.
+my $context = 'entry';
+
+# Keep cil auxliary variables and their values to eventually remove them.
+my %cil_vars;
+
+
+################################################################################
+# Main section.
+################################################################################
+
+# Obtain the debug level.
+get_debug_level('blast-et-conv', $LDV_DEBUG, $LDV_BLAST_ET_CONV_DEBUG);
+
+print_debug_info("Begin to parse error trace specified");
+my $et_tree_root_node = parse_error_trace(\@et_array);
+print_debug_debug("Error trace was parsed successfully");
+print_debug_info("Begin to convert error trace to the common format");
+# Zeroize previous source file one more time since it was likely set in parsing.
+$src_prev = '';
+my $et_conv = convert_tree_node_to_common($et_tree_root_node);
+print_debug_debug("Error trace was converted to the common format successfully");
+
+# Add such the header to distinguish error traces in the common format.
+push(@et_conv_array, "Error trace common format v0.1\n");
+
+push(@et_conv_array, @{$et_conv});
+
+
+################################################################################
+# Subroutines.
+################################################################################
+
+{
+# Supress warnings like 'Subroutine get_loc_and_val redefined' in the manner
+# recommended at http://perldoc.perl.org/perldiag.html.
+no warnings 'redefine';
+
+sub convert_tree_node_to_common($)
+{
+  my $node = shift;
+
+  my $node_common = '';
+
+  # Obtain source and line if so.
+  my $src;
+  my $line;
+  if ($node->{'pre annotations'})
+  {
+    foreach my $pre (@{$node->{'pre annotations'}})
+    {
+      if ($pre->{'kind'} eq 'Location')
+      {
+        $src = $pre->{'values'}[0];
+        $line = $pre->{'values'}[1];
+      }
+    }
+  }
+
+  $node_common .= "$line " if ($line);
+  # Source file should be printed if it is specified and source file wasn't
+  # printed before or current source file differs from the previous one.
+  my $issrc_required = ($src and (!$src_prev or $src ne $src_prev));
+  $node_common .= "\"$src\" " if ($issrc_required);
+
+  # Obtain formal parameter names or/and LDV comments if so.
+  my @names = ();
+  my $ldv_comment1 = '';
+  my $ldv_comment2 = '';
+  if ($node->{'post annotations'})
+  {
+    foreach my $post (@{$node->{'post annotations'}})
+    {
+      if ($post->{'kind'} eq 'Locals')
+      {
+        foreach my $name (@{$post->{'values'}})
+        {
+          # Remove parameter name scope.
+          $name =~ s/@\w+//g;
+          push(@names, $name);
+        }
+      }
+      elsif ($post->{'kind'} eq 'LDV')
+      {
+        $ldv_comment1 = ${$post->{'values'}}[0];
+        $ldv_comment2 = ${$post->{'values'}}[1];
+      }
+    }
+  }
+
+  # Make node specific transformation.
+  if ($node->{'kind'} eq 'FunctionCall')
+  {
+    $node_common .= "CALL ";
+
+    # Add information on formal parameter names.
+    if (scalar(@names))
+    {
+      my @quoted_names = map({"'$ARG'"} @names);
+      $node_common .= "@quoted_names";
+    }
+  }
+  elsif ($node->{'kind'} eq 'Return')
+  {
+    $node_common .= "RETURN ";
+    # Leave a current initialization section.
+    $context = 'entry' if ($context eq 'init');
+  }
+  elsif ($node->{'kind'} eq 'Block')
+  {
+    $node_common .= "BLOCK ";
+  }
+  elsif ($node->{'kind'} eq 'Pred')
+  {
+    $node_common .= "ASSUME ";
+  }
+  elsif ($node->{'kind'} eq 'FunctionCallInitialization')
+  {
+    $node_common .= "CALL INIT ";
+    $context = 'init';
+  }
+  elsif ($node->{'kind'} eq 'FunctionCallWithoutBody')
+  {
+    $node_common .= "CALL SKIP(\"Function call is skipped due to function is undefined\") ";
+  }
+  elsif ($node->{'kind'} eq 'FunctionStackOverflow')
+  {
+    my $fdepth = $node->{'fdepth'};
+    $node_common .= "CALL SKIP(\"Function call is skipped to reduce verification time in accordance with '-fdepth $fdepth' option\") ";
+  }
+  elsif ($node->{'kind'} eq 'Root')
+  {
+    # Tree root node is artificial, it's intended just to keep first-level children.
+  }
+
+  # Understand if we are at the entry point now. There may be just one entry
+  # point for a given error trace, so, leave context if entry point is found.
+  my $entry_point = '';
+  if ($node->{'kind'} ne 'Root' and $node->{'kind'} ne 'Return' and $context eq 'entry')
+  {
+    $entry_point = 'CALL ENTRY';
+    $context = '';
+  }
+
+  # Remove so-called BLASTisms and make a given error trace to look nicer.
+  if (my $val = ${$node->{'values'}}[0])
+  {
+    # Remove entities scope.
+    $val =~ s/@\w+//g;
+
+    # Replace multiple spaces with ' ', ' )' with ')' and '* (' with '*('.
+    $val =~ s/ +/ /g;
+    $val =~ s/ \)/\)/g;
+    $val =~ s/\* \(/\*\(/g;
+
+    # Replace '= *(A).B offset C;' with '= &((*A).B[C])'.
+    # For instance:
+    #   cil_30 = * (iface_desc ).endpoint  offset i  + 1;
+    # becomes:
+    #   cil_30 = &((*iface_desc).endpoint[i + 1]);
+    $val =~ s/=\s*\*\s*\(([^\)]+)\)\.([^\s]+)\s+offset\s+([^;]+);/= &\(\(\*$1\).$2\[$3\]\);/;
+
+    # Replace 'A foffset B' with '&(A)->B' in the "recursive" way.
+    while ($val =~ /(\w+|&\(\w+\))\s+foffset\s+\w+/)
+    {
+      # Collect all foffset operands for a given expression. Note that just the
+      # first can be '&(...)' while others are simple identifiers.
+      my @foffset_ops = ();
+      my $text_for_replacement;
+      if ($val =~ /((\w+|&\(\w+\))\s+foffset\s+)/)
+      {
+        $text_for_replacement = $1;
+        push(@foffset_ops, $2);
+        my $str_end = $POSTMATCH;
+
+        while (1)
+        {
+          if ($str_end =~ /^(\w+)/)
+          {
+            $text_for_replacement .= $1;
+            push(@foffset_ops, $1);
+
+            $str_end = $POSTMATCH;
+
+            if ($str_end =~ /^(\s+foffset\s+)/)
+            {
+              $text_for_replacement .= $1;
+              $str_end = $POSTMATCH
+            }
+            else
+            {
+              last;
+            }
+          }
+          else
+          {
+            print_debug_warning("Trace format isn't supported");
+          }
+        }
+        # Make required conversion.
+        while (scalar(@foffset_ops) > 1)
+        {
+          my $op1 = shift(@foffset_ops);
+          my $op2 = shift(@foffset_ops);
+
+          unshift(@foffset_ops, "\&($op1)->$op2");
+        }
+        # Replace initial string with the obtained one.
+        $val =~ s/\Q$text_for_replacement\E/$foffset_ops[0]/;
+      }
+      else
+      {
+        print_debug_warning("Trace format isn't supported");
+      }
+    }
+
+    # Remove and propogate artificial CIL variables 'cil_\d+'.
+    if ($val =~ /((cil_\d+) = ([^;]+);)/)
+    {
+      my $cil_expr = $1;
+      my $cil_var = $2;
+      my $cil_var_val = $3;
+
+      $cil_vars{$cil_var} = $cil_var_val;
+
+      # Remove artificial CIL variable definition.
+      $val =~ s/\Q$cil_expr\E//;
+      # Skip the given block at all if there isn't any other expression in
+      # this block except CIL variable definition.
+      return if ($val =~ /^\s*$/);
+
+      # Usually auxiliary CIL variables are defined and used in scope of one
+      # block, so replace them with their values.
+      $val =~ s/$cil_var/$cil_var_val/;
+    }
+
+    # Sometimes auxiliary CIL variables are defined and used in scope of
+    # different blocks.
+    foreach my $cil_var (keys(%cil_vars))
+    {
+      $val =~ s/\Q$cil_var\E/$cil_vars{$cil_var}/;
+    }
+
+    $node_common .= ": $val";
+  }
+
+  # Update current source file just now because of entity may be skipped before
+  # and for following entities source file will be incorrect (#3664).
+  $src_prev = $src if ($issrc_required);
+
+  # Obtain common representation for all children.
+  my @children_common = ();
+  if ($node->{'children'})
+  {
+    foreach my $child (@{$node->{'children'}})
+    {
+      my $child_common = convert_tree_node_to_common($child);
+      push (@children_common, @{$child_common}) if ($child_common);
+    }
+  }
+
+  # Add common representation of the node processed to the beginning of its
+  # children common representation list. Do not add representation for the
+  # Root element that is represented as ''.
+  unshift(@children_common, $node_common) if ($node_common);
+
+  # Add information on entry point if so.
+  unshift(@children_common, $entry_point) if ($entry_point);
+
+  return \@children_common;
+}
+
+sub parse_error_trace($)
+{
+  my $et = shift;
+
+  # The list of current parents.
+  my @parents = ();
+
+  # Currently processed entity and annotation.
+  my $entity;
+  my $annotation;
+
+  # Stored pre annotations.
+  my @pre_annotations = ();
+
+  # Create the tree root corresponding to the entry point or main.
+  $entity = ETV::Entity->new({'engine' => $engine, 'kind' => $et_root});
+  push(@parents, $entity);
+
+  while(1)
+  {
+    # Read some element, either tree node (like function call) or annotation
+    # (like a path source code file). Note that some elements can be placed
+    # into several lines so process all needed lines to obtain the full text of
+    # given elements. Finish when there is no more lines.
+    my $iselement_read = 0;
+    my $element = '';
+
+    while ($iselement_read == 0)
+    {
+      # Read a part of a given element with simple processing.
+      my $element_part = read_line($et);
+
+      unless (defined($element_part))
+      {
+        # Without this message users can obtain incomplete error trace html
+        # representation and won't understand what has happend.
+        print_debug_warning("You obtain incomplete error trace representation! End of file was reached but some elements weren't still processed!")
+          if ($element);
+
+        # Print the last location if it exists
+        if(@pre_annotations)
+        {
+          print_debug_trace("Create an ERROR entity");
+          #create a fake entity
+          $entity = ETV::Entity->new({'engine' => $engine, 'kind' => "ERROR", 'values' => undef});
+
+          # Process entities as tree.
+          $entity->set_parent($parents[$#parents])
+            if (@parents);
+
+          # Add pre annotations.
+          $entity->set_pre_annotations(@pre_annotations);
+          @pre_annotations = ();
+        }
+
+        $iselement_read = -1;
+        last;
+      }
+
+      # Empty lines are meanigless so just skip them.
+      next unless($element_part);
+
+      # Add extra space to separate different parts of a given element from
+      # each other. Further it'll help to print pretty expressions.
+      $element .= " " if ($element);
+      $element .= "$element_part";
+
+      # Detect a given element kind and call a corresponding handler to process it.
+      die("Can't find a kind of element '$element'.") unless ($element =~ /$et_element_kind/);
+      my $element_kind = $1;
+      my $element_content = $POSTMATCH;
+
+      die("The element kind '$element_kind' belongs neither to tree nodes nor to annotations.")
+        unless ($element_kind
+          or defined($et_element{'tree node'}{$element_kind})
+          or defined($et_element{'annotation'}{$element_kind}));
+
+      # When a handler is available for a given error trace element then execute
+      # it. If an element is processed successfully then a handler should return
+      # some defined value.
+      if ($et_element{'tree node'}{$element_kind})
+      {
+        if (defined(my $element_value = $et_element{'tree node'}{$element_kind}->($element_content)))
+        {
+          print_debug_trace("Process '$element_kind' tree node");
+
+          # Ignore skips error trace elements that have an empty string value at
+          # all.
+          if ($element_value)
+          {
+            $entity = ETV::Entity->new({'engine' => $engine, 'kind' => $element_kind, 'values' => $element_value});
+
+            # Some nodes are processed in a special way, so report it.
+            print_debug_trace("A tree node kind was changed from '$element_kind' to '" . $entity->{'kind'} . "'")
+              if ($entity->{'kind'} ne $element_kind);
+
+            # Process entities as tree.
+            $entity->set_parent($parents[$#parents])
+              if (@parents);
+
+            if ($entity->ismay_have_children())
+            {
+              push(@parents, $entity);
+              print_debug_trace("Increase the parent stack because of a processed entity may have children");
+            }
+
+            if ($entity->isparent_end())
+            {
+              pop(@parents);
+              print_debug_trace("Decrease the parent stack due to a processed entity kind");
+            }
+
+            # Add pre annotations.
+            $entity->set_pre_annotations(@pre_annotations);
+            @pre_annotations = ();
+          }
+        }
+        # Following lines should be read to obtain a full representation of a
+        # given element.
+        else
+        {
+          next;
+        }
+      }
+      elsif ($et_element{'annotation'}{$element_kind})
+      {
+        if (defined(my $element_value = $et_element{'annotation'}{$element_kind}->($element_content)))
+        {
+          print_debug_trace("Process '$element_kind' annotation");
+
+          # Ignore arificial locations at all.
+          if ($element_value)
+          {
+            $annotation = ETV::Annotation->new({'engine' => $engine, 'kind' => $element_kind, 'values' => $element_value});
+
+            # Process annotation in depend on whether it pre or post.
+            push(@pre_annotations, $annotation)
+              if ($annotation->ispre_annotation());
+
+            if ($annotation->ispost_annotation())
+            {
+              $entity->set_post_annotations(($annotation));
+
+              # Update parents since post annotations can change an entity kind.
+              if ($entity->isparent_end())
+              {
+                pop(@parents);
+                print_debug_trace("Decrease the parent stack due to post annotations");
+              }
+            }
+          }
+        }
+        # Following lines should be read to obtain a full representation of a
+        # given element. Does it happen whenever for annotations?..
+        else
+        {
+          next;
+        }
+      }
+
+      # Element was read sucessfully.
+      $iselement_read = 1;
+    }
+
+    # The whole error trace was read either successfully or not.
+    last if ($iselement_read == -1);
+  }
+
+  # Return the error trace tree root node.
+  return $parents[0];
+}
+
+sub read_brackets($)
+{
+  my $line = shift;
+
+  # Check that a specified line begins with the open bracket and finishes with
+  # the close bracket. If this isn't the case then additional lines should be
+  # read. Most likely the close bracket will be found after all.
+  return undef unless ($line =~ /^\(.*\)$/);
+
+  # If the number of open brackets doesn't equal to the number of close brackets
+  # then additional lines are needed. This is required since an usual string
+  # can end with close bracket although it isn't a read element end.
+  # We also need to ensure that brackets inside quotes are ignored! So just
+  # remove all strings from a given line before we will count the number of
+  # brackets. Also take care of escaped quotes inside stings.
+  my $line_without_strings = $line;
+  $line_without_strings =~ s/\\"//g;
+  $line_without_strings =~ s/"[^"]*"//g;
+  my $open_bracket_numb = ($line_without_strings =~ tr/\(//);
+  my $close_bracket_numb = ($line_without_strings =~ tr/\)//);
+  return undef if ($open_bracket_numb != $close_bracket_numb);
+
+  # Remove brackets surrounding the line.
+  $line =~ /^\((.*)\)$/;
+
+  my @content = ($1);
+
+  return \@content;
+}
+
+sub read_equal_int($)
+{
+  my $line = shift;
+
+  # Check that a given line begins with the equality sign and its retained part
+  # consists just of integer digits.
+  # It should be so if there is no critical error in trace.
+  return undef unless ($line =~ /^=(\d+)$/);
+
+  return $1;
+}
+
+sub read_equal_src($)
+{
+  my $line = shift;
+
+  # Check that a line begins with the equality sign and the open double quote
+  # and finishes with the close double quote and the semicolon. If it isn't the
+  # case then additional lines should be read. Most likely additional lines
+  # aren't required for source annotations at all.
+  return undef unless ($line =~ /^="(.*)";$/);
+
+  # Remove equality, semicolon and quotes surrounding the line.
+  $line = $1;
+
+  # We don't consider the empty string as a correct source code file name.
+  return undef unless ($line);
+
+  return $line;
+}
+
+sub read_line($)
+{
+  my $et = shift;
+
+  # Try to read a next line.
+  return undef unless (defined(my $line = shift(@{$et})));
+
+  # Remove the end of line.
+  chomp($line);
+  # Remove all formatting spaces and tabs placed at the beginning of the line.
+  $line =~ /^[\s]*/;
+  $line = $POSTMATCH;
+
+  # Return the processed line.
+  return $line;
+}
+
+sub read_ldv_comment($)
+{
+  my $line = shift;
+
+  # Check that a line begins with the colon. It should be so if there is no
+  # critical error in trace. Then remove the given colon and all formatting
+  # spaces and tabs placed at the beginning of the line.
+  return undef unless ($line =~ /^:[\s]*/);
+  $line = $POSTMATCH;
+
+  # LDV comments are split by colons.
+  my @ldv_comments = split(/:/, $line);
+
+  return \@ldv_comments;
+}
+
+sub read_locals($)
+{
+  my $line = shift;
+
+  # Check that a line begins with the colon. It should be so if there is no
+  # critical error in trace. Remove the given colon and all formatting spaces
+  # and tabs placed at the beginning of the line.
+  return undef unless ($line =~ /^:[\s]*/);
+  $line = $POSTMATCH;
+
+  # Function parameters names are split by spaces.
+  my @params = split(/\s+/, $line);
+
+  return \@params;
+}
+
+sub read_location($)
+{
+  my $line = shift;
+
+  # Location isn't interesting for visualization. So just ignore it.
+  return undef unless ($line =~ /^: id=\d+#\d+/);
+  $line = $POSTMATCH;
+  $line = $POSTMATCH if ($line =~ /^ \(Artificial\)/);
+
+  # Remove all formatting spaces and tabs placed at the beginning of the line.
+  $line =~ /^[\s]*/;
+  $line = $POSTMATCH;
+
+  # There may be no source code file and line number (for artificial locations).
+  return '' unless ($line);
+
+  # The retained path of the location contains a path to a source code file and
+  # a line number.
+  my @location = split(/\s+/, $line);
+
+  die("Can't find a path to source code file in location '$location[0]'.")
+    unless ($location[0] =~ /$et_element_kind/);
+  my $src_content = $POSTMATCH;
+  my $src = read_equal_src($src_content);
+
+  if (defined($src))
+  {
+    $src_prev = $src;
+  }
+  else
+  {
+    print_debug_warning("A path to a source code file '$src_content' wasn't processed. So a previosly obtained value '$src_prev' will be used for a given error trace entity");
+    $src = $src_prev;
+  }
+
+  die("Can't find a line number in location")
+    unless ($location[1] and $location[1] =~ /$et_element_kind/);
+  my $line_numb_content = $POSTMATCH;
+  my $line_numb = read_equal_int($line_numb_content);
+
+  if (defined($line_numb))
+  {
+    $line_prev = $line_numb;
+  }
+  else
+  {
+    print_debug_warning("A line number '$line_numb_content' wasn't processed. So a previosly obtained value '$line_prev' will be used for a given error trace entity");
+    $line_numb = $line_prev;
+  }
+
+  @location = ($src, $line_numb);
+
+  return \@location;
+}
+
+}

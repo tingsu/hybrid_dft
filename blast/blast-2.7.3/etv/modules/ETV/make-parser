@@ -1,0 +1,5 @@
+#!/bin/bash
+
+yapp -m ETV::Parser -s -o shared/perl/modules/ETV/Parser.pm shared/perl/modules/ETV/Parser.ym || echo "Can't create perl module for parser" && exit;
+echo "Perl module for parser was created successfully";
+
