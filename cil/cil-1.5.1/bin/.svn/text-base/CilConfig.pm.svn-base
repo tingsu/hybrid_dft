@@ -1,6 +1,0 @@
-
-$::archos    = "x86_LINUX";
-$::cc        = "gcc";
-$::cilhome   = "/work/svn/trunk/tingsucaut/cil-1.5.1";
-$::default_mode = "GNUCC";
-

@@ -1,3 +1,0 @@
-Error: Cannot find input file 1 (exception Sys_error("1: No such file or directory")
-Caught Errormsg.Error while parsing
-Fatal error: exception Errormsg.Error
