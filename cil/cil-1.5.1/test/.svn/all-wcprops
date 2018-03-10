@@ -1,0 +1,35 @@
+K 25
+svn:wc:ra_dav:version-url
+V 52
+/svn/CAUT/!svn/ver/4/trunk/tingsucaut/cil-1.5.1/test
+END
+testcil.bat
+K 25
+svn:wc:ra_dav:version-url
+V 64
+/svn/CAUT/!svn/ver/4/trunk/tingsucaut/cil-1.5.1/test/testcil.bat
+END
+Makefile
+K 25
+svn:wc:ra_dav:version-url
+V 61
+/svn/CAUT/!svn/ver/4/trunk/tingsucaut/cil-1.5.1/test/Makefile
+END
+testcil.h
+K 25
+svn:wc:ra_dav:version-url
+V 62
+/svn/CAUT/!svn/ver/4/trunk/tingsucaut/cil-1.5.1/test/testcil.h
+END
+testcil.pl
+K 25
+svn:wc:ra_dav:version-url
+V 63
+/svn/CAUT/!svn/ver/4/trunk/tingsucaut/cil-1.5.1/test/testcil.pl
+END
+testcil
+K 25
+svn:wc:ra_dav:version-url
+V 60
+/svn/CAUT/!svn/ver/4/trunk/tingsucaut/cil-1.5.1/test/testcil
+END

@@ -1,0 +1,83 @@
+K 25
+svn:wc:ra_dav:version-url
+V 79
+/svn/CAUT/!svn/ver/139/trunk/tingsucaut/cil-1.5.1/src/caut/front/DataStructures
+END
+RandomBag.ml
+K 25
+svn:wc:ra_dav:version-url
+V 92
+/svn/CAUT/!svn/ver/139/trunk/tingsucaut/cil-1.5.1/src/caut/front/DataStructures/RandomBag.ml
+END
+PrioritySearchQueue.ml
+K 25
+svn:wc:ra_dav:version-url
+V 102
+/svn/CAUT/!svn/ver/139/trunk/tingsucaut/cil-1.5.1/src/caut/front/DataStructures/PrioritySearchQueue.ml
+END
+Heap.ml
+K 25
+svn:wc:ra_dav:version-url
+V 87
+/svn/CAUT/!svn/ver/139/trunk/tingsucaut/cil-1.5.1/src/caut/front/DataStructures/Heap.ml
+END
+ImmutableArray.ml
+K 25
+svn:wc:ra_dav:version-url
+V 97
+/svn/CAUT/!svn/ver/139/trunk/tingsucaut/cil-1.5.1/src/caut/front/DataStructures/ImmutableArray.ml
+END
+RandomAccessList.ml
+K 25
+svn:wc:ra_dav:version-url
+V 99
+/svn/CAUT/!svn/ver/139/trunk/tingsucaut/cil-1.5.1/src/caut/front/DataStructures/RandomAccessList.ml
+END
+TimedSet.ml
+K 25
+svn:wc:ra_dav:version-url
+V 91
+/svn/CAUT/!svn/ver/139/trunk/tingsucaut/cil-1.5.1/src/caut/front/DataStructures/TimedSet.ml
+END
+Counter.ml
+K 25
+svn:wc:ra_dav:version-url
+V 90
+/svn/CAUT/!svn/ver/139/trunk/tingsucaut/cil-1.5.1/src/caut/front/DataStructures/Counter.ml
+END
+Deferred.ml
+K 25
+svn:wc:ra_dav:version-url
+V 91
+/svn/CAUT/!svn/ver/139/trunk/tingsucaut/cil-1.5.1/src/caut/front/DataStructures/Deferred.ml
+END
+StackSet.ml
+K 25
+svn:wc:ra_dav:version-url
+V 91
+/svn/CAUT/!svn/ver/139/trunk/tingsucaut/cil-1.5.1/src/caut/front/DataStructures/StackSet.ml
+END
+NamedCounter.ml
+K 25
+svn:wc:ra_dav:version-url
+V 95
+/svn/CAUT/!svn/ver/139/trunk/tingsucaut/cil-1.5.1/src/caut/front/DataStructures/NamedCounter.ml
+END
+Ternary.ml
+K 25
+svn:wc:ra_dav:version-url
+V 90
+/svn/CAUT/!svn/ver/139/trunk/tingsucaut/cil-1.5.1/src/caut/front/DataStructures/Ternary.ml
+END
+EfficientSequence.ml
+K 25
+svn:wc:ra_dav:version-url
+V 100
+/svn/CAUT/!svn/ver/139/trunk/tingsucaut/cil-1.5.1/src/caut/front/DataStructures/EfficientSequence.ml
+END
+_tags
+K 25
+svn:wc:ra_dav:version-url
+V 85
+/svn/CAUT/!svn/ver/139/trunk/tingsucaut/cil-1.5.1/src/caut/front/DataStructures/_tags
+END

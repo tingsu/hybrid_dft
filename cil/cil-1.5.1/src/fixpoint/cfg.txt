@@ -1,0 +1,36 @@
+digraph CFG_bubble {
+1 [label="1: if"]
+	1 -> 2
+	1 -> 3
+2 [label="2: return"]
+	
+3 [label="3: instr"]
+	3 -> 4
+4 [label="4: loop"]
+	4 -> 5
+5 [label="5: if"]
+	5 -> 7
+	5 -> 6
+6 [label="6: break"]
+	6 -> 15
+7 [label="7: instr"]
+	7 -> 8
+8 [label="8: loop"]
+	8 -> 9
+9 [label="9: if"]
+	9 -> 11
+	9 -> 10
+10 [label="10: break"]
+	10 -> 14
+11 [label="11: if"]
+	11 -> 12
+	11 -> 13
+12 [label="12: instr"]
+	12 -> 13
+13 [label="13: instr"]
+	13 -> 8
+14 [label="14: instr"]
+	14 -> 4
+15 [label="15: return"]
+	
+}

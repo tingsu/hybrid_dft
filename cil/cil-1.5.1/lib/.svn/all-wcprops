@@ -1,0 +1,47 @@
+K 25
+svn:wc:ra_dav:version-url
+V 51
+/svn/CAUT/!svn/ver/4/trunk/tingsucaut/cil-1.5.1/lib
+END
+OutputFile.pm
+K 25
+svn:wc:ra_dav:version-url
+V 65
+/svn/CAUT/!svn/ver/4/trunk/tingsucaut/cil-1.5.1/lib/OutputFile.pm
+END
+Cilly.pm.in
+K 25
+svn:wc:ra_dav:version-url
+V 63
+/svn/CAUT/!svn/ver/4/trunk/tingsucaut/cil-1.5.1/lib/Cilly.pm.in
+END
+Makefile
+K 25
+svn:wc:ra_dav:version-url
+V 60
+/svn/CAUT/!svn/ver/4/trunk/tingsucaut/cil-1.5.1/lib/Makefile
+END
+.gdbinit
+K 25
+svn:wc:ra_dav:version-url
+V 60
+/svn/CAUT/!svn/ver/4/trunk/tingsucaut/cil-1.5.1/lib/.gdbinit
+END
+KeptFile.pm
+K 25
+svn:wc:ra_dav:version-url
+V 63
+/svn/CAUT/!svn/ver/4/trunk/tingsucaut/cil-1.5.1/lib/KeptFile.pm
+END
+TempFile.pm
+K 25
+svn:wc:ra_dav:version-url
+V 63
+/svn/CAUT/!svn/ver/4/trunk/tingsucaut/cil-1.5.1/lib/TempFile.pm
+END
+Cilly.pm
+K 25
+svn:wc:ra_dav:version-url
+V 60
+/svn/CAUT/!svn/ver/4/trunk/tingsucaut/cil-1.5.1/lib/Cilly.pm
+END

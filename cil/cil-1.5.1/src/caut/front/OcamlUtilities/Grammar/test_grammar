@@ -1,0 +1,28 @@
+if [[ $# -ne 2 ]]; then
+    echo Usage: test_grammar grammar_file max_string_length
+    exit 0
+fi
+
+./grammar < $1 > test_grammar.c &&
+undefined_functions=`gcc test_grammar.c 2>&1 | sed -n 's/.*"_\(generate.*\)".*/\1/p' | sort`
+
+if [[ $? -ne 0 ]]; then
+   exit $?
+fi
+if [[ -n "$undefined_functions" ]]; then
+   echo There are undefined functions:
+   for i in $undefined_functions; do echo $i; done
+   exit 1
+fi
+
+echo "int main() {
+    // This is a gimmick to get Otter to print out sample values for the grammar
+    const char str[MAX_GRAMMAR_STRING_LENGTH+1];
+    __SYMBOLIC(&str);
+    if (strcmp(str, generate_start())) {
+        __ASSUME(0);
+    }
+    return 0;
+}" >> test_grammar.c &&
+../../../../newlib-1.19.0/otter/otter-with-libc --dootter --doRunRmtmps test_grammar.c -DMAX_GRAMMAR_STRING_LENGTH=$2 --printLittle --pathCov |
+sed -n -e '/str=.*)$/p' -e '/str=.*\\n$/,/)$/p' # This funny sed script prints 'str=Bytearray(...)', even if it wraps onto multiple lines because of newlines in the array

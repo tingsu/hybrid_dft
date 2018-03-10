@@ -1,0 +1,303 @@
+(**cautstorevar
+Author:Fangzhaotan
+Date:2012/11/08
+Modify_date:2013/04/10
+Description:collect the function arguments and insert the instructions
+*)
+
+module E = Errormsg
+
+open Cil
+open String
+open Pretty
+
+(*let global_var_list = ref ([] : varinfo list)*)
+let function_var_list = ref ([] : varinfo list)
+(*let function_var_list_add = ref ([] : varinfo list)*)
+let stmt_list = ref ([] : stmt list)
+
+(**2013/4/25*)
+(*store the function tmp_sformals*)
+let function_var_tmp = ref ([] : varinfo list)
+let v2e (v : varinfo) : exp = Lval(var v)
+
+(*store the function sformals*)
+let exp_list = ref ([] : exp list)
+
+let tmp_instr_list = ref ([] : stmt list) 
+let tmp1_instr_list = ref ([] : stmt list)		
+let tmp2_instr_list = ref ([] : stmt list)						
+let tmp3_instr_list = ref ([] : stmt list)				
+let tmp4_instr_list = ref ([] : stmt list) 
+let tmp5_instr_list = ref ([] : stmt list) 
+
+(*
+let sameVar (var1: varinfo) (var2 : varinfo) =
+	if (var1.vname = var2.vname) && (var1.vtype = var2.vtype) then true
+	else false					
+*)
+
+(* manipulating array *)
+let rec getArrDimension arr = 
+	match arr with
+		|TArray(tt,eo,_) ->
+			let (s, n, ds) = getArrDimension tt in
+			( s, n+1, [(lenOfArray eo)] @ ds )
+		|_ -> (arr, 0, [])
+
+(* manipulating ptr *)
+let rec getPtrDimension ptr =
+	match ptr with
+		TPtr(t, _) -> 
+			let (s, n) = getPtrDimension t	in
+			(s, n + 1)
+		|_ -> (ptr, 0)
+
+						
+(*class for changing the function call statement*)																																																																																																																																																																																																													
+class repsca_visitor (fundec_t : fundec) = object (self)
+	inherit nopCilVisitor
+		method vinst (i : instr) =
+			match i with
+				| Call(Some(Var vi, NoOffset),_,_,_) ->
+					let shadow = makeTempVar ~insert:false fundec_t vi.vtype in
+					function_var_list := !function_var_list @ [shadow];
+					(**2013/4/25*)
+					function_var_tmp := !function_var_tmp @ [shadow];
+					ignore(makeFormalVar fundec_t ~where:"$" shadow.vname shadow.vtype);
+(*
+					for j=0 to (List.length fundec_t.slocals -1) do
+						let var = (List.nth fundec_t.slocals j) in
+						if (List.exists (sameVar var) fundec_t.sformals) then
+						fundec_t.slocals <- List.filter (fun x -> x!=var) fundec_t.slocals																							 
+					done
+					;
+*)
+					let ss = [Set ((Var vi, NoOffset),Lval (var shadow),!currentLoc)] in
+					ChangeTo ss
+				| _ -> DoChildren
+end
+
+(*class for modifing the under test function in testme function*)
+class testme_visitor (fundec_t : fundec) (test_unit_name : string) = object (self)
+	inherit nopCilVisitor
+		method vinst (i : instr) =
+			match i with
+				| Call(None,Lval(Var vi, NoOffset),_,_) ->
+					if vi.vname = test_unit_name then
+					begin
+						let ss = [Call (None, Lval (var vi), !exp_list ,!currentLoc)] in
+						ChangeTo ss
+					end
+					else
+						DoChildren				
+				| _ -> DoChildren
+end
+																																																																																																						
+(*Delete the function call*)
+let fixInstr (i: instr) : bool =
+	match i with				
+		| Call(None,_,_,loc) ->
+			   (*delete the stmt like f() with no lval!*)
+				false
+		| Call(Some(Var vi, NoOffset),_,_,loc) ->
+				(*ignore(makeInstrStmts fundec_t vi loc);*)
+				false
+		| _ -> true
+	
+let rec fixStmt (s:stmt) : unit = 
+	match s.skind with
+		| Instr il ->
+			s.skind <- Instr(List.filter fixInstr il )
+		| If(e, tb, fb, _) ->
+			fixBlock tb ;
+			fixBlock fb 
+		| Switch(_,b,_,_) ->
+   		fixBlock b 
+ 		| Loop(b,_,_,_) ->
+   		fixBlock b 
+ 		| Block b ->
+   		fixBlock b 
+ 		| TryFinally(b1, b2, _) ->
+   		fixBlock b1 ;
+   		fixBlock b2 
+ 		| TryExcept(b1,_,b2,_) ->
+   		fixBlock b1 ;
+   		fixBlock b2  
+		| _ -> ()
+	
+and fixBlock (b: block) : unit = List.iter fixStmt b.bstmts 
+	
+let fixFunction (fd: fundec) : unit = fixBlock fd.sbody 
+
+(*get the type of the variable and return the type string. Like void -> "void" *)
+let rec get_type_comment t : string =
+	match t with
+		TVoid(_) -> "void"
+		| TInt(IChar,_) -> "char"
+		| TInt(ISChar,_) -> "signed char"
+		| TInt(IUChar,_) -> "unsigned char"
+		| TInt(IInt,_) -> "int"
+		| TInt(IUInt,_) -> "unsigned int"
+		| TInt(IShort,_) -> "short"
+		| TInt(IUShort,_) -> "unsigned short"
+		| TInt(ILong,_) -> "long"
+		| TInt(IULong,_) -> "unsigned long"
+		| TInt(ILongLong,_) -> "long long"
+		| TInt(IULongLong,_) -> "unsigned long long"
+		| TFloat(FFloat,_) -> "float"
+		| TFloat(FDouble,_) -> "double"
+		| TFloat(FLongDouble,_) -> "long double"
+		| TArray (tt,eop,_) -> 
+			let rec getArrName t level dimens = 
+				if level = 0 then (get_type_comment t)
+				else (getArrName t (level-1) dimens) ^ "[" ^ (string_of_int (List.nth dimens (level-1)) )^ "]"
+			in
+			let (arr_type, arr_level, dimens) = getArrDimension t in
+			(getArrName arr_type arr_level dimens)
+		| TPtr(tt, _) -> 
+			let rec getPtrName t level = (* return the ptr's name *)
+				if level = 0 then (get_type_comment t)
+				else (getPtrName t (level-1)) ^ "*"
+			in
+			let (ptr_type, ptr_level) = getPtrDimension t in
+			  getPtrName ptr_type ptr_level
+		| TNamed(t',_) -> 
+			get_type_comment (unrollType t)
+		| TComp(c,_) -> c.cname
+		| TEnum(e,_) -> e.ename
+		| _ -> "unsigned long"
+
+
+let docautcreateInstruction (f: file) (test_unit_name: string)= 
+	for i=0 to (List.length f.globals-1) do
+		match (List.nth f.globals i) with
+		| GFun (fundec_t , location_t ) ->
+				if fundec_t.svar.vname = test_unit_name then
+					begin 
+						function_var_list := fundec_t.sformals ;
+						(*function_var_list_add := fundec_t.sformals ;*)
+					end
+				
+	(*	| GVar(varinfo_t, initinfo_t, location_t) -> 
+			(*match initinfo_t.init with
+				| Some(init_t) -> ()
+				| None ->*)	
+						global_var_list := !global_var_list @ [varinfo_t];
+  	    	  function_var_list := !function_var_list @[varinfo_t];
+						function_var_tmp := !function_var_tmp @ [varinfo_t]
+		*)				
+		| _ -> ()
+	done
+	;
+	
+	for i=0 to (List.length f.globals-1) do	
+		match (List.nth f.globals i) with
+			| GFun(fundec_t, location_t) ->
+				if fundec_t.svar.vname = test_unit_name then
+				 begin
+					(*for i = 0 to (List.length !global_var_list)-1 do
+						let varinfo_t = (List.nth !global_var_list i) in
+						let varinfo_tmp = makeFormalVar fundec_t ~where:"$" varinfo_t.vname varinfo_t.vtype in
+						function_var_list := !function_var_list @ [varinfo_tmp];
+					done
+					;	*)
+					
+					let repscaVst = new repsca_visitor fundec_t in
+					fundec_t.sbody <- visitCilBlock repscaVst fundec_t.sbody;
+					
+					(*filter the function call *)
+					fixFunction fundec_t;
+					
+				 end
+			|_ -> ()
+	done
+	;
+					
+	for i=0 to (List.length f.globals-1) do	
+		match (List.nth f.globals i) with
+			| GFun(fundec_t, location_t) ->		
+			 if fundec_t.svar.vname = "testme" then
+					begin					
+						(*add the store_input_var interface*)
+						let storeFun = emptyFunction "store_input_var" in					
+						for i = 0 to (List.length !function_var_list)-1 do
+							let var_tmp = (List.nth !function_var_list i) in
+							(**modify by Fang on 2013/05/15*)
+							let var_type = get_type_comment var_tmp.vtype in
+							(*let var_type = (sprint 20 ((d_type () var_tmp.vtype))) in*)							
+							let store_instr = Call(None, Lval(Var storeFun.svar, NoOffset), [Const(CStr var_tmp.vname);AddrOf(Var(var_tmp),NoOffset);Const(CStr var_type)], !currentLoc ) in							
+							tmp2_instr_list := !tmp2_instr_list @ [mkStmtOneInstr store_instr]		 
+						 done
+						 ;
+						
+						(*add the _cf_getInput interface*)
+						let caut_input_interface = emptyFunction "_cf__getInput" in
+						for i = 0 to (List.length !function_var_tmp)-1 do
+						 	let var_tmp = (List.nth !function_var_tmp i) in
+							fundec_t.slocals <- fundec_t.slocals @ [var_tmp];
+							let instr_t1 = Call(None, Lval(Var caut_input_interface.svar, NoOffset), [mkCast (AddrOf(Var(var_tmp),NoOffset))  ulongType ], !currentLoc ) in
+							tmp3_instr_list := !tmp3_instr_list @ [mkStmtOneInstr instr_t1]						
+						done
+						;
+						
+						for i=0 to (List.length !function_var_list)-1 do
+							let var' = (List.nth !function_var_list i) in
+							(*ignore(E.log "%a\n" d_type (unrollType var'.vtype));*)
+							exp_list := !exp_list @ [v2e var']
+						done
+						;
+							
+						(*insert the store and CAUT_INPUT interface*)						
+						for i=0 to (List.length fundec_t.sbody.bstmts)-1 do
+							let st1 = (List.nth fundec_t.sbody.bstmts i) in
+							match st1.skind with								
+								| Block bl -> 
+									for k=0 to (List.length bl.bstmts)-1 do
+										let st' = (List.nth bl.bstmts k) in
+										match st'.skind with
+											| Instr il ->
+												for j=0 to (List.length il)-1 do
+													let il' = (List.nth il j) in
+													match il' with
+														| Call(None,Lval(Var vi, NoOffset),_,_) ->
+																if vi.vname = "_cf__getInput" then  (*_cf__getInput*)
+																	ignore(tmp4_instr_list := !tmp4_instr_list @ [mkStmtOneInstr il'])
+																else if vi.vname = "store_input_var" then
+																	ignore(tmp1_instr_list := !tmp1_instr_list @ [mkStmtOneInstr il'])
+																else
+																	ignore(tmp5_instr_list := !tmp5_instr_list @ [mkStmtOneInstr il'])																										
+														| _ -> ()
+												done
+												;				
+											|_ -> ()
+									done
+									;
+								|_ -> ()
+						done
+						;
+						
+						(*add the printcase interface*)
+						let printFun = emptyFunction "print_testcase" in
+						let print_instr = Call(None, Lval(Var printFun.svar, NoOffset), [], !currentLoc ) in
+						fundec_t.sbody.bstmts <- !tmp1_instr_list @ !tmp2_instr_list @ !tmp3_instr_list @ !tmp4_instr_list @ [mkStmtOneInstr print_instr] @ !tmp5_instr_list;
+						
+						(*modify the formals of under test function, for example: foo(x,y) -> foo(x,y,tmp) *)
+						let testmeVst = new testme_visitor fundec_t test_unit_name in
+						fundec_t.sbody <- visitCilBlock testmeVst fundec_t.sbody;  							
+					end		
+			| _ -> () 			
+		done
+	
+(*let feature : featureDescr = 
+  {
+    fd_name = "cautstorevar";
+    fd_enabled = ref false;
+    fd_description = "create \"testme\" driver";
+    fd_extraopt = [];
+    fd_doit =  (function (f: file)  -> 
+      docautcreatetestme f);
+    fd_post_check = true
+  }
+*)
+

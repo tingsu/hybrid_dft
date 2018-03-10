@@ -1,0 +1,8 @@
+# This reads its input from stdin
+
+sed -E \
+  -e 's/(^|[ (|])([a-z][a-z0-9_]*)/\1{\\it \2}/g' -e '# italicize nonterminals' \
+  -e 's/_/\\_/g' -e '# escape underscores' \
+  -e 's/"([^"]*)"/{\\color{red} \\verb*~\1~}/g' -e '# make string literals red and verbatim' \
+  -e 's/::=/$\\rightarrow$/' -e '# convert ::= to $\rightarrow$' \
+  -e 's/$/\\\\/' -e '# add \\ to the end of each line'
